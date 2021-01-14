@@ -1,0 +1,40 @@
+##NOTA###################
+## la url de elasticsearch en los archivos yaml, por el momento debe ser la ip publica que indica en o los pods elasticsearch-master (la ip del servicio api no es alcanzada)
+## la url de kube-state-metrics (por ejemplo la que se utliza en metricbeat.yaml) debe ser la ip y no el nombre del servicio (no toma los nombres de los servicios)
+## A considerar: Cuando la ip expuesta en un archivo yaml para algún servicio, es una "non-loopback adress", funciona el accesso desde otros pods (la ip de servicio de kube-state-metrics por ejemplo, revisar
+con kubectl get services)
+##########################
+
+#SE USÓ HELM PARA INSTALAR KIBANA,filebeat, ELASTICSEARCH (aunque el local-path se creó por medio de kubectl)
+
+
+Aplicar configuraciones en yaml:
+
+--PARA ELASTICSEARCH
+1.- kubectl apply -f elasticsearch/local-path.yaml 
+###OMITIR .- kubectl apply -f pv-volume.yaml
+2.- helm install elasticsearch elastic/elasticsearch -f elasticsearch/elasticsearch-values.yaml --version 7.8.1 --set replicas=1
+
+--PARA KIBANA
+#kibana nodePort 32601
+1.-helm install kibana elastic/kibana -f kibana/kibana-value.yaml
+
+--PARA METRICBEAT (sin helm)
+.-kubectl apply -f metricbeat/metricbeat.yaml
+
+
+--PARA FILEBEAT 
+helm install filebeat elastic/filebeat -f filebeat/filebeat-2.yaml
+#.-kubectl apply -f filebeat/filebeat.yaml
+
+### Comandos utiles
+port-forward para poder acceder a  puerto no publicado con "nodePort"
+                          nombre-pod         puerto-pod:puerto-para-acceder-desde-localhost
+1.- kubectl port-forward elasticsearch-master-0 9200:9888
+2.- curl localhost:9888 (Debería responder un json de elasticsearch al acceder al puerto 9200 a través de 9888)
+
+
+
+##ESCALAR replicas de  UN POD
+
+kubectl  scale --replicas=0 deployment/web20-frontend

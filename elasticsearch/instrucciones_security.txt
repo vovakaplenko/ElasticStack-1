@@ -1,0 +1,114 @@
+#########################################################################
+CONSIDERACIONES IMPORANTES
+#########################################################################
+SE SUGIERE UTILIZAR url https://elasticsearch-master-0.elasticsearch-master-headless.kube-system.svc.cluster.local:9200 PARA ALCANZAR ELASTICSEARCH
+o url https://elasticsearch-master:9200
+
+
+PARA VERIFICAR COMUNICACION ENTRE PODS CON DNS, SE SUGIERE UTILIZAR LA SGTE IMAGEN DESPLEGADA EN EL CLUSTER
+dns tools: kubectl run -it  --restart=Never --image=infoblox/dnstools:latest dnstools
+LO SIGUIENTE SE REALIZA CONSIDERANDO [nameserver en resolv.conf de los PODS = nameserver: 10.96.0.10 (corresponde a la IP del servicio kube-dns, debería funcionar)]:
+
+
+DENTRO DEL POD EJECUTAR:
+dig google.com (o cual sea la url a probar, EJ: elasticsearch-master:9200)
+
+EL COMANDO dig google.com, NO DEBE MOSTRAR ALGO COMO ESTO:
+
+	dnstools# dig elasticsearch-master-0
+	;; reply from unexpected source: 10.44.0.2#53, expected 10.96.0.10#53
+	;; reply from unexpected source: 10.44.0.2#53, expected 10.96.0.10#53
+	;; reply from unexpected source: 10.44.0.2#53, expected 10.96.0.10#53
+
+SINO MAS BIEN, ALGO COMO ESTO (esto funciona, porque manualmente se cambió nameserver en resolv.conf a nameserver 10.44.0.2, que corresponde al pod core-dns y NO al service que debería ser utilizado; kube-dns:10.96.0.10):
+	dnstools# dig elasticsearch-master
+
+	; <<>> DiG 9.11.3 <<>> elasticsearch-master
+	;; global options: +cmd
+	;; Got answer:
+	;; ->>HEADER<<- opcode: QUERY, status: FORMERR, id: 1661
+	;; flags: qr rd; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1
+	;; WARNING: recursion requested but not available
+	
+	;; OPT PSEUDOSECTION:
+	; EDNS: version: 0, flags:; udp: 4096
+	; COOKIE: 625b48542f394a87 (echoed)
+	;; QUESTION SECTION:
+	;elasticsearch-master.		IN	A
+
+	;; Query time: 1 msec
+	;; SERVER: 10.44.0.2#53(10.44.0.2)
+	;; WHEN: Thu Sep 17 19:59:59 UTC 2020
+	;; MSG SIZE  rcvd: 61
+
+CON LO ANTERIOR, SE PUEDE VERIFICAR QUE EL DNS FUNCIONA CORRECTAMENTE, O TIENE ERRORES.
+
+#########################################################################
+SUGERENCIAS ANTES DE EJECUTAR LOS COMANDOS "MAKE" indicados en "makefile"
+PARA LEVANTAR ELASTICSEARCH CLUSTER
+#########################################################################
+
+1: Asegurar que el usuario actual esté asignado al mismo grupo docker, de esta forma
+el comando make secrets o make purge (cualquiera que ejecute docker), no va a generar errores
+de permiso denegado.
+
+	-- sudo usermod -a -G docker $USER
+
+#########################################################################
+INSTALAR ELASTICSEARCH CON SEGURIDAD SSL Y USUARIOS
+#########################################################################
+
+1.- Los comandos a ejecutar se encuentran indicados en el archivo makefile
+2.- Lo que realiza el comando make secrets es preparar los certificados ssl de forma automatica,
+asi no se interviene en el contenedor (las instrucciones manuales indican los cambios dentro del 
+contenedor de elasticsearch)
+3.- COMANDO A EJECUTAR PARA GENERAR USUARIO Y PASSWORD DE LOS BEATS DE ELASTIC:
+	kubectl exec -it $(kubectl get pods -n default | grep elasticsearch-master-0 | sed -n 1p | awk '{print $1}') -n default -- bin/elasticsearch-setup-passwords auto -b
+4.- TRAS LA FINALIZACION EXITOSA DEL COMANDO ANTERIOR, CREAR kubectl secrets, con las credenciales generadas tras elasticsearch-setup-password:
+	kubectl create secret generic elastic-beats-system -n kube-system --from-literal=password=14A5KsvGesWBxKGm8Q0d --from-literal=username=beats_system
+	kubectl create secret generic elastic-kibana-system -n kube-system --from-literal=password=nogfTK02EybiAsybZRLh --from-literal=username=kibana_system
+        kubectl create secret generic elastic-filebeat-system -n kube-system --from-literal=password=fbmonitoring --from-literal=username=filebeat 
+	kubectl create secret generic elastic-beats-system --from-literal=password=k8smetricszs --from-literal=username=metricbeat -n kube-system
+        ... etc.
+
+
+5.- en los archivos de configuracion yaml de cada beat del elasticstack, (incluyendo kibana), montar los volumenes correspondientes a los secrets de cada system
+e indicar en las credenciales de acceso a elasticsearch (output.elasticsearch)
+
+6.- en los archivos de configuracion yaml de cada beat del elasticstack, (incluyendo kibana), montar los volumenes correspondientes a los certificados guardados en los secrets de kubernetes
+e indicarlos en el yml correspondiente (ejemplo filebeat.yml), como puede ser certificado pem: ssl.certificates_authorities = <<RUTA DEL CERTIFICADO>> (indicar bajo elasticsearch u output.elasticsearch)
+ --- en los archivos yml (de cada beat del elasticstack) se encuentran ejemplos de como debe ser implementado.
+
+###############################################################################################
+LAS SIGUIENTES INSTRUCCIONES ES UN EJEMPLO DEL CÓMO CONFIGURAR LOS CERTIFICADOS SSL MANUALMENTE
+###############################################################################################
+dentro del contenedor elasticsearch
+1: ejecutar bin/elasticsearch-certutil cert
+1.1: indicar ruta de certificado; config/certs/elastic-certificates.p12
+2: modificar config/elasticsearch.yml
+2.2: añadir:
+
+xpack.security.enabled: true
+xpack.security.transport.ssl.enabled: true
+xpack.security.transport.ssl.verification_mode: certificate
+xpack.security.transport.ssl.keystore.path: /usr/share/elasticsearch/config/certs/elastic-certificates.p12
+xpack.security.transport.ssl.truststore.path: /usr/share/elasticsearch/config/certs/elastic-certificates.p12
+xpack.security.http.ssl.enabled: true
+xpack.security.http.ssl.truststore.path: /usr/share/elasticsearch/config/certs/elastic-certificates.p12
+xpack.security.http.ssl.keystore.path: /usr/share/elasticsearch/config/certs/elastic-certificates.p12
+
+
+3: ejecutar bin/elasticsearch-setup-passwords auto (credenciales seteadas automaticamente)
+4: el anterior comando, al finalizar, podrá visualizar las credenciales generadas.
+
+# si hay mas nodos, copiar toda la configuracion de master (config/) al nodo
+
+
+
+
+#########
+
+UPDATE SECRETS
+kubectl create secret generic elastic-credentials -n kube-system  --from-literal=password=FuWFE4U3PVXq4dJ7rWXJ --from-literal=username=elastic --dry-run -o yaml | kubectl apply -f -
+
+

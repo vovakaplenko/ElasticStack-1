@@ -1,0 +1,4 @@
+{"type":"log","@timestamp":"2020-09-16T17:34:43Z","tags":["warning","plugins","reporting"],"pid":7,"message":"Generating a random key for xpack.reporting.encryptionKey. To prevent sessions from being invalidated on restart, please set xpack.reporting.encryptionKey in kibana.yml"}
+{"type":"log","@timestamp":"2020-09-16T17:34:43Z","tags":["warning","plugins","reporting"],"pid":7,"message":"Chromium sandbox provides an additional layer of protection, but is not supported for Linux Centos 7.8.2003 OS. Automatically setting 'xpack.reporting.capture.browser.chromium.disableSandbox: true'."}
+{"type":"log","@timestamp":"2020-09-16T17:34:43Z","tags":["warning","reporting"],"pid":7,"message":"Enabling the Chromium sandbox provides an additional layer of protection."}
+
